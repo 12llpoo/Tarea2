@@ -1,6 +1,6 @@
 #include<stdio.h>  // libreria basica para entrada y salida
 #include<stdlib.h> // libreria para el uso de rand()
-#include<conio.h>  // libreria para el uso de getch()
+//#include<conio.h>  // libreria para el uso de getch()
 #include<time.h>   // libreria para el uso de time()
 #include<math.h>
 
