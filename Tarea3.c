@@ -1,126 +1,140 @@
-#include<stdio.h>  // libreria basica para entrada y salida
-#include<stdlib.h> // libreria para el uso de rand()
-//#include<conio.h>  // libreria para el uso de getch()
-#include<time.h>   // libreria para el uso de time()
-#include<math.h>
 #include<mpi.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<time.h>   // libreria para el uso de time()
+#include<math.h>   // libreria para recursos matematicos
 
-int arreglo[100000],tam=100000;
+// Declaramos el tamaño del arreglo y un tamaño para utizarlo en algunas funciones.
+int arreglo[20],tam=20;
 
-int Llenar_arreglo(){
-    // Declaracion de variables
-    int contador,cantidad = 100000;
+// Inicializamos todas las funciones a utilizar para evitar errores Y/ warning.
+int* crear_subVector(int begin, int end, int* origin);
+void print(int my_rank, int comm_sz, int n_over_p, int* sub_vec);
+float subPromedio(int *sub_vector, int largo_sv);
+float varianza(int vector[],float promArreglo);
+float desviacionEstandar();
+void Llenar_arreglo();
+
+int main(void){
+
+    int comm_sz; // numero de procesos
+    int my_rank;
+
+    int* sub_vec = NULL;
+    int* total = NULL;
+    int n_over_p; 
+    float recv_promedio; /* Promedio general de los subvectores recibidos */
+
+    MPI_Init(NULL, NULL); /* Inicializamos MPI */
+    MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);    
+
+    n_over_p = 20/comm_sz; // cantidad en la que se divide el vector
+
+    if (my_rank != 0) {
+	sub_vec = (int*)malloc(n_over_p * sizeof(int));
+        MPI_Recv(sub_vec, n_over_p, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        print(my_rank, comm_sz, n_over_p, sub_vec); //Dentro de esta func se calculan los promedios de cada sub_vector
+
+	float recv_promedio = subPromedio(sub_vec,n_over_p); //Se calcula el subpromedio del subvector p[i]
+        MPI_Send(&recv_promedio,1,MPI_FLOAT,0,0,MPI_COMM_WORLD);//Se envía el arreglo con los subpromedio al Proce=0 para calculos.
+        	
+
+    } else { // Procesador 0 (Promedios de promedio/varianza/desviacion estandar)
+
+	//Llenamos el arreglo ramdom con Llenar_arreglo();
+  	Llenar_arreglo();	
+
+        for (int i = 1; i < comm_sz; i++) {
+            sub_vec = crear_subVector(i*n_over_p, (i*n_over_p)+n_over_p, arreglo);
+            MPI_Send(sub_vec, n_over_p, MPI_INT, i, 0, MPI_COMM_WORLD);  // Enviamos los sub-vectores a los n(i) procesos
+        }
+
+        sub_vec = crear_subVector(0, n_over_p, arreglo);
+	float subProm=subPromedio(sub_vec,n_over_p);
+
+        for(int i=1; i<comm_sz; i++) {
+        	float recibeProm = recv_promedio;
+        	MPI_Recv(&recibeProm,1,MPI_FLOAT,i,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE); //Recibe los subpromedios con MPI_Recv
+        	subProm += recibeProm; //Se suman la totalidad de los diferentes subpromedios
+	} 
+	
+	print(my_rank, comm_sz, n_over_p, sub_vec);
+
+	// Llamamos a las funciones para trabajar con ellas.
+
+	float promTotal=(subProm/comm_sz); //Se calcula el promedio total de todos los subpromedios recibidos en P=0
+	printf("Promedio de Promedios: %f\n", promTotal); //Salida por pantalla del promedio total
+
+	printf("Varianza de PdP's: %f\n", varianza(arreglo,promTotal)); //Salida por pantalla de la varianza
+
+	float desvEstandar = sqrt(varianza(arreglo,promTotal));
+
+	printf("La desviacion estandar de PdP's: %f\n", desvEstandar); //Salida por pantalla de la desviacion estandar      
+    }
+
+    MPI_Finalize();
+    return 0;
+
+}
+// Creamos el sub_vector que contendra los  vectores con el largo dividio en la cantidad de procesos
+int* crear_subVector(int begin, int end, int* origin){
+    int* sub_vec;
+    int size;
+    int aux = 0;
+    size = end - begin;
+    sub_vec = (int*)malloc(size * sizeof(int));
+    for (int i = begin; i < end; ++i) {
+        *(sub_vec+aux) = *(origin+i);
+        aux += 1;
+    }
+    return  sub_vec;
+}
+
+// Mostramos lo subvector y los promedios de cada sub vector
+void print(int my_rank, int comm_sz, int n_over_p, int* sub_vec){
+    printf("Process %d out of %d received sub_vector: [ ", my_rank, comm_sz);
+    for (int i = 0; i < n_over_p; ++i)
+    {
+        printf("%d, ", *(sub_vec+i));	
+    }
+    printf("]\n");
+    float prom = subPromedio(sub_vec,n_over_p);
+    printf("Del procesador %d el promedio es %f\n",my_rank,prom);
+    printf("\n");
+
+}
+
+// Llenamos el arreglo con 100.000 numeros ramdom
+void Llenar_arreglo(){
+    int contador,cantidad = 20;
     int hora = time(NULL);
-
-    // Semilla de rand();
     srand(hora);
-
     for(contador = 0; contador<cantidad; contador++){
         arreglo[contador] = rand()%100;
-               printf("%d ", arreglo[contador]);
         }
 }
 
-float calcularPromedio(){
-	float suma=0;
-	for(int i=0;i<tam;i++){
-		suma += arreglo[i];
-	}
-    return suma/tam;
-}
-
-float varianza(){
-    float media = calcularPromedio();
-    float var = 0;
-    for(int i=0; i<tam; i++){
-        var+=pow(arreglo[i]-media,2);
-    }
-    var /= tam;
+// Calculamos la varianza del promedio de promedios
+float varianza(int vector[],float promArreglo){
+    float var;
+    for(int i=0; i<=tam; i++){
+        var+=pow(vector[i]-promArreglo,2);
+	var = var/promArreglo;
+    }    
     return var;
 }
 
-float desviacionEstandar(){
-    return sqrt(varianza());
-}
+// Sacamos todos los promedio de los sub_vectores
+float subPromedio(int *sub_vector, int largo_sv){
+	int *s = sub_vector;
+        float promedio;
+        float suma_sv;
+        for(int i = 0; i < largo_sv; i++) {
+                suma_sv += *s;
+                s++;
+        }
+        promedio = suma_sv/largo_sv;
 
-int main( )
-{
-    MPI_Init(NULL, NULL); //inicializacion
-
-    int procesador; 
-    int tamano; 
-    int numero = 0; // variable a enviar y/o recibir
-    float numero_promedio = 0.0;
-    float numero_varianza = 0.0;
-    float numero_dEstandar = 0.0;
-    
-    MPI_Comm_size(MPI_COMM_WORLD, &tamano); // guardamos el tamaño de procesadores a trabajar
-    MPI_Comm_rank(MPI_COMM_WORLD, &procesador); // procesador en tiempo x
-    
-    /* MPI_Send(&dato_a_enviar,
- 		contador(0/1),
-		 tipo_de_dato,
-		destino,
-		 tag(0/1),
-		 comunicador)
-	MPI_Recv(dato_a_recibir,
-		 contador,
-		 tipo_de_dato,
-		fuente_de_viene,
-		tag,
-		comunicador,
-		status)
-	*/
-    
-    if(procesador == 0){
-		numero = Llenar_arreglo();
-                
-                numero_promedio = calcularPromedio();
-                printf("\n\nEl Promedio es: %f \n", numero_promedio);
-                
-                numero_varianza = varianza();
-                printf("\n\nLa Varianza es: %f \n", numero_varianza);
-                
-                numero_dEstandar = desviacionEstandar();
-                printf("\n\nLa Desviacion Estandar es: %f \n", numero_dEstandar);
-                
-		int procesador_a_enviar = 1;
-                int procesador_a_enviar_prom = 2;
-                int procesador_a_enviar_vari = 3;
-                int procesador_a_enviar_desv = 4;
-                
-		MPI_Send(&numero, 1, MPI_INT,procesador_a_enviar, 0 , MPI_COMM_WORLD);
-                MPI_Send(&numero_promedio, 1, MPI_FLOAT,procesador_a_enviar_prom, 0 , MPI_COMM_WORLD);
-                MPI_Send(&numero_varianza, 1, MPI_FLOAT,procesador_a_enviar_vari, 0 , MPI_COMM_WORLD);
-                MPI_Send(&numero_dEstandar, 1, MPI_FLOAT,procesador_a_enviar_desv, 0 , MPI_COMM_WORLD);
-	}
-        if(procesador == 1){
-		int procesador_a_recibir = 0;
-		MPI_Recv(&numero, 1, MPI_INT,procesador_a_recibir,0 ,MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	}
-	if(procesador == 2){
-		int procesador_a_recibir = 0;
-		MPI_Recv(&numero_promedio, 1, MPI_FLOAT,procesador_a_recibir,0 ,MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	}
-        if(procesador == 3){
-		int procesador_a_recibir = 0;
-		MPI_Recv(&numero_varianza, 1, MPI_FLOAT,procesador_a_recibir,0 ,MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	}
-        if(procesador == 4){
-		int procesador_a_recibir = 0;
-		MPI_Recv(&numero_dEstandar, 1, MPI_FLOAT,procesador_a_recibir,0 ,MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	}
-		
-	printf("soy el numero %d, y tbn soy el procesador %d\n", numero, procesador);
-	
-        MPI_Finalize();
-
-  //Llenar_arreglo();
-  //float prom = calcularPromedio();
-  //float vari = varianza();
-  //float desve = desviacionEstandar();
-  //printf("\n\nEl Promedio es: %f \n", prom);
-  //printf("\n\nLa Varianza es: %f \n", vari);
-  //printf("\n\nLa Desviacion estandar es: %f \n", desve);
-
+        return promedio;
 }
