@@ -5,15 +5,16 @@
 #include<math.h>   // libreria para recursos matematicos
 
 // Declaramos el tamaño del arreglo y un tamaño para utizarlo en algunas funciones.
-int arreglo[20],tam=20;
+int arreglo[100000],tam=100000;
 
 // Inicializamos todas las funciones a utilizar para evitar errores Y/ warning.
+void Llenar_arreglo();
 int* crear_subVector(int begin, int end, int* origin);
 void print(int my_rank, int comm_sz, int n_over_p, int* sub_vec);
 float subPromedio(int *sub_vector, int largo_sv);
 float varianza(int vector[],float promArreglo);
+float varianza_arreglo(int vector[],float promArreglo);
 float desviacionEstandar();
-void Llenar_arreglo();
 
 int main(void){
 
@@ -29,7 +30,7 @@ int main(void){
     MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);    
 
-    n_over_p = 20/comm_sz; // cantidad en la que se divide el vector
+    n_over_p = 100000/comm_sz; // cantidad en la que se divide el vector
 
     if (my_rank != 0) {
 	sub_vec = (int*)malloc(n_over_p * sizeof(int));
@@ -66,11 +67,15 @@ int main(void){
 	float promTotal=(subProm/comm_sz); //Se calcula el promedio total de todos los subpromedios recibidos en P=0
 	printf("Promedio de Promedios: %f\n", promTotal); //Salida por pantalla del promedio total
 
-	printf("Varianza de PdP's: %f\n", varianza(arreglo,promTotal)); //Salida por pantalla de la varianza
+	float var = varianza(arreglo,promTotal);
+
+	printf("Varianza de PdP's: %f\n", var); //Salida por pantalla de la varianza
 
 	float desvEstandar = sqrt(varianza(arreglo,promTotal));
 
-	printf("La desviacion estandar de PdP's: %f\n", desvEstandar); //Salida por pantalla de la desviacion estandar      
+	printf("La desviacion estandar de PdP's: %f\n\n", desvEstandar); //Salida por pantalla de la desviacion estandar   
+
+	printf("PD: PdP's = Promedio de Promedios\n");   
     }
 
     MPI_Finalize();
@@ -107,7 +112,7 @@ void print(int my_rank, int comm_sz, int n_over_p, int* sub_vec){
 
 // Llenamos el arreglo con 100.000 numeros ramdom
 void Llenar_arreglo(){
-    int contador,cantidad = 20;
+    int contador,cantidad = 100000;
     int hora = time(NULL);
     srand(hora);
     for(contador = 0; contador<cantidad; contador++){
@@ -117,11 +122,12 @@ void Llenar_arreglo(){
 
 // Calculamos la varianza del promedio de promedios
 float varianza(int vector[],float promArreglo){
-    float var;
+    float var = 0;
     for(int i=0; i<=tam; i++){
         var+=pow(vector[i]-promArreglo,2);
-	var = var/promArreglo;
-    }    
+	//var /= tam;
+    }   
+    var /= tam; 
     return var;
 }
 
